@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatchPixel - 브라우저 기반 초고속 일괄 이미지 리사이저</title>
+  <meta name="description" content="서버 전송 없이 브라우저 메모리에서 100% 안전하게 동작하는 스마트 일괄 이미지 리사이징 도구입니다. X축, Y축, 긴축, 짧은축, 퍼센트 비율 기준 조절 및 개별/ZIP 일괄 다운로드를 지원합니다.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Pretendard:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- JSZip 라이브러리 (로컬 오프라인 지원 + CDN Fallback) -->
+  <script src="jszip.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      const cdnScript = document.createElement('script');
+      cdnScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      document.head.appendChild(cdnScript);
+    }
+  </script>
+</head>
+<body>
+  <!-- 배경 글로우 효과 -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <div class="app-container">
+    <!-- 헤더 영역 -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">BatchPixel</h1>
+          <p class="brand-tagline">브라우저 로컬 메모리 기반 스마트 일괄 이미지 리사이저</p>
+        </div>
+      </div>
+
+      <div class="header-security-badge" id="securityBadge" title="모든 이미지 데이터는 브라우저 내부 메모리에서만 처리되며 어떤 외부 서버로도 전송되지 않습니다.">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <span>100% 로컬 연산 (서버 전송 없음)</span>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- 상단 컨트롤 패널 & 업로드 섹션 -->
+      <section class="config-grid">
+        <!-- 드래그 & 드롭 업로드 카드 -->
+        <div class="card upload-card" id="dropZone">
+          <input type="file" id="fileInput" multiple accept="image/*" class="visually-hidden">
+          <div class="upload-inner">
+            <div class="upload-icon-pulse">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <h2 class="upload-title">이미지 파일을 이곳에 끌어다 놓으세요</h2>
+            <p class="upload-desc">JPG, PNG, WEBP, GIF, SVG, BMP 지원 · 다중 파일 일괄 업로드</p>
+            <button type="button" class="btn btn-primary" id="btnSelectFiles">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              파일 직접 선택하기
+            </button>
+            <div class="upload-specs-hint">
+              <span>⚡ 무제한 용량</span>
+              <span>🔒 개인정보 보호 보장</span>
+              <span>⚡ 빠른 Canvas 렌더링</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 리사이징 옵션 컨트롤 패널 -->
+        <div class="card settings-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="step-num">1</span>
+              <h3>리사이징 기준 설정</h3>
+            </div>
+            <button type="button" class="btn-ghost-sm" id="btnResetSettings" title="기본값으로 초기화">초기화</button>
+          </div>
+
+          <div class="mode-selector-group">
+            <label class="section-label">기준 모드 선택</label>
+            <div class="mode-grid">
+              <!-- 1. X축 기준 -->
+              <label class="mode-tab active" data-mode="width">
+                <input type="radio" name="resizeMode" value="width" checked class="visually-hidden">
+                <span class="mode-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16m-16 0l4-4m-4 4l4 4m12-4l-4-4m4 4l-4 4"/></svg>
+                </span>
+                <span class="mode-name">1. X축 (너비)</span>
+                <span class="mode-sub">가로폭 고정 맞춤</span>
+              </label>
+
+              <!-- 2. Y축 기준 -->
+              <label class="mode-tab" data-mode="height">
+                <input type="radio" name="resizeMode" value="height" class="visually-hidden">
+                <span class="mode-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16m0-16l-4 4m4-4l4 4m-4 12l-4-4m4 4l4-4"/></svg>
+                </span>
+                <span class="mode-name">2. Y축 (높이)</span>
+                <span class="mode-sub">세로높이 고정 맞춤</span>
+              </label>
+
+              <!-- 3. 긴축 기준 -->
+              <label class="mode-tab" data-mode="longest">
+                <input type="radio" name="resizeMode" value="longest" class="visually-hidden">
+                <span class="mode-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 12h8m-8 0l2-2m-2 2l2 2m6-2l-2-2m2 2l-2 2"/></svg>
+                </span>
+                <span class="mode-name">3. 긴축 기준</span>
+                <span class="mode-sub">가장 긴 변 기준</span>
+              </label>
+
+              <!-- 4. 짧은축 기준 -->
+              <label class="mode-tab" data-mode="shortest">
+                <input type="radio" name="resizeMode" value="shortest" class="visually-hidden">
+                <span class="mode-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 8v8m0-8l-2 2m2-2l2 2m-2 6l-2-2m2 2l2-2"/></svg>
+                </span>
+                <span class="mode-name">4. 짧은축 기준</span>
+                <span class="mode-sub">가장 짧은 변 기준</span>
+              </label>
+
+              <!-- 5. 퍼센트 비율 기준 -->
+              <label class="mode-tab" data-mode="percent">
+                <input type="radio" name="resizeMode" value="percent" class="visually-hidden">
+                <span class="mode-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/><path d="M17 7L7 17"/></svg>
+                </span>
+                <span class="mode-name">5. 비율 (%)</span>
+                <span class="mode-sub">원본 대비 배율</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 동적 파라미터 입력부 -->
+          <div class="dynamic-input-container">
+            <!-- 픽셀 기준 입력 영역 (Width, Height, Longest, Shortest 공통/스위칭) -->
+            <div id="pixelInputWrapper" class="input-setting-group">
+              <div class="input-header-row">
+                <label for="pixelValueInput" id="pixelInputLabel">목표 너비 (Width)</label>
+                <div class="preset-badges" id="pixelPresets">
+                  <button type="button" class="badge-btn" data-val="640">640px</button>
+                  <button type="button" class="badge-btn" data-val="1080">1080px</button>
+                  <button type="button" class="badge-btn" data-val="1280">1280px</button>
+                  <button type="button" class="badge-btn" data-val="1920">1920px (FHD)</button>
+                  <button type="button" class="badge-btn" data-val="2560">2560px (QHD)</button>
+                </div>
+              </div>
+              <div class="custom-input-box">
+                <input type="number" id="pixelValueInput" value="1280" min="1" max="10000" step="1">
+                <span class="input-unit">px</span>
+              </div>
+              <p class="input-helper-text" id="pixelHelperText">종횡비(가로세로 비율)는 자동으로 완벽히 유지됩니다.</p>
+            </div>
+
+            <!-- 퍼센트 기준 입력 영역 (Percent 모드일 때 활성화) -->
+            <div id="percentInputWrapper" class="input-setting-group hidden">
+              <div class="input-header-row">
+                <label for="percentValueInput">리사이징 비율 (%)</label>
+                <div class="preset-badges" id="percentPresets">
+                  <button type="button" class="badge-btn" data-val="25">25%</button>
+                  <button type="button" class="badge-btn" data-val="50">50%</button>
+                  <button type="button" class="badge-btn" data-val="75">75%</button>
+                  <button type="button" class="badge-btn" data-val="150">150%</button>
+                  <button type="button" class="badge-btn" data-val="200">200%</button>
+                </div>
+              </div>
+              <div class="range-with-number">
+                <input type="range" id="percentRangeInput" value="50" min="1" max="300" step="1" class="slider-range">
+                <div class="custom-input-box range-num-box">
+                  <input type="number" id="percentValueInput" value="50" min="1" max="500" step="1">
+                  <span class="input-unit">%</span>
+                </div>
+              </div>
+              <p class="input-helper-text">100% 미만은 축소, 100% 초과는 확대됩니다.</p>
+            </div>
+          </div>
+
+          <!-- 출력 포맷 및 품질 옵션 -->
+          <div class="format-quality-row">
+            <div class="select-group">
+              <label for="formatSelect">출력 포맷</label>
+              <div class="custom-select-wrapper">
+                <select id="formatSelect">
+                  <option value="original" selected>원본 포맷 유지 (Keep Original)</option>
+                  <option value="image/jpeg">JPG / JPEG</option>
+                  <option value="image/png">PNG (무손실 / 투명배경)</option>
+                  <option value="image/webp">WEBP (고효율 압축)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="quality-group" id="qualityWrapper">
+              <div class="quality-label-row">
+                <label for="qualitySlider">압축 품질</label>
+                <span id="qualityDisplay" class="quality-val">90%</span>
+              </div>
+              <input type="range" id="qualitySlider" min="10" max="100" value="90" step="5" class="slider-range">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 일괄 작업 바 & 통계 정보 -->
+      <section class="batch-bar-section card" id="batchBarSection">
+        <div class="batch-info-cluster">
+          <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="fileCountBadge" class="status-text">업로드된 이미지 없음</span>
+          </div>
+          <div class="meta-tag-group" id="metaSummaryGroup" style="display: none;">
+            <span class="meta-badge" id="totalOriginalSizeBadge">원본 용량: 0 MB</span>
+            <span class="meta-badge" id="currentModeSummaryBadge">모드: X축 1280px</span>
+          </div>
+        </div>
+
+        <div class="batch-action-buttons">
+          <button type="button" class="btn btn-secondary" id="btnClearAll" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            전체 비우기
+          </button>
+          <button type="button" class="btn btn-primary-gradient" id="btnDownloadAllZip" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+            <span>전체 일괄 다운로드 (.ZIP)</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 진행률 표시 바 (ZIP 생성 또는 일괄 처리 시 표시) -->
+      <div class="progress-bar-container" id="progressBarContainer" style="display: none;">
+        <div class="progress-bar-header">
+          <span class="progress-title" id="progressStatusText">이미지 일괄 리사이징 및 압축 중...</span>
+          <span class="progress-percentage" id="progressPercentText">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFillBar" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- 이미지 목록 뷰 영역 -->
+      <section class="gallery-section">
+        <div class="gallery-toolbar">
+          <h3 class="gallery-heading">
+            이미지 리스트
+            <span class="count-pill" id="itemCountPill">0</span>
+          </h3>
+          <div class="view-switch-tools">
+            <span class="tip-text">각 이미지 카드의 다운로드 버튼으로 <strong>개별 다운로드</strong>가 가능합니다.</span>
+          </div>
+        </div>
+
+        <!-- 이미지 카드 그리드 -->
+        <div class="image-grid" id="imageGrid">
+          <!-- 비어있을 때 빈 상태 안내 -->
+          <div class="empty-state" id="emptyPlaceholder">
+            <div class="empty-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+            </div>
+            <h4>리사이징할 이미지를 추가해보세요</h4>
+            <p>위의 업로드 영역에 파일을 드래그하거나 [파일 직접 선택하기] 버튼을 눌러주세요.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="app-footer">
+      <div class="footer-content">
+        <p>© 2026 BatchPixel · 클라이언트 사이드 고성능 이미지 프로세서</p>
+        <p class="privacy-note">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          모든 처리는 사용자 PC의 웹 브라우저(Canvas Memory) 안에서만 수행되며, 파일이 외부로 유출되지 않습니다.
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 토스트 알림 컨테이너 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- 메인 스크립트 -->
+  <script src="app.js"></script>
+</body>
+</html>
